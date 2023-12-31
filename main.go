@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-
-	"github.com/gorilla/mux"
 )
 
 // utils
@@ -20,7 +18,7 @@ func WriteJSON(w http.ResponseWriter, status int, value any) error {
 
 // HTTP Types and Utils
 // --------------------------------
-// NOTE: we could omit the error return value, but then we would need to handle the errors in the handler function...and I don't like that. the HandleFunc from gorilla mux does not return an error, so we need to wrap it in a function that does return an error! So we are going to make a mapping type:
+// NOTE: we could omit the error return value, but then we would need to handle the errors in the handler function...and I don't like that. the HandleFunc from net/http does not return an error, so we need to wrap it in a function that does return an error! So we are going to make a mapping type:
 type ApiFunc func(w http.ResponseWriter, r *http.Request) error
 
 func makeHTTPHandlerFunc(fn ApiFunc) http.HandlerFunc {
@@ -41,7 +39,7 @@ type ApiError struct {
 
 // /account Handler
 // ----------------
-// gorilla/mux cannot handle GET, PUT, POST, DELETE, etc. in the same handler function, so we need to take care of that routing ourselves here in the main /account Handler
+// net/http cannot handle GET, PUT, POST, DELETE, etc. in the same handler function, so we need to take care of that routing ourselves here in the main /account Handler
 func (s *ApiServer) accountHandler(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
 		return s.getAccount(w, r)
@@ -87,24 +85,6 @@ func NewApiServer(listAddr string) *ApiServer {
 }
 
 func (s *ApiServer) Run() {
-	router := mux.NewRouter()
-
-	// NOTE: the HandleFunc from gorilla mux does not return an error, so we need to wrap it in a function that does return an error!
-	router.HandleFunc("/account", makeHTTPHandlerFunc(s.accountHandler))
-	router.HandleFunc("/transfer", makeHTTPHandlerFunc(s.transferHandler))
-
-	log.Println("listening on", s.listAddr)
-
-	http.ListenAndServe(s.listAddr, router)
-}
-
-// Server2 without gorilla mux
-// ---------------------------
-func NewApiServer2(listAddr string) *ApiServer {
-	return &ApiServer{listAddr: listAddr}
-}
-
-func (s *ApiServer) Run2() {
 	http.HandleFunc("/account", makeHTTPHandlerFunc(s.accountHandler))
 	http.HandleFunc("/transfer", makeHTTPHandlerFunc(s.transferHandler))
 
@@ -114,9 +94,7 @@ func (s *ApiServer) Run2() {
 
 func main() {
 	fmt.Println("hello creature ...")
-	// server := NewApiServer(":8080")
-	// server.Run()
 
-	server2 := NewApiServer2(":8082")
-	server2.Run2()
+	server := NewApiServer(":8080")
+	server.Run()
 }
