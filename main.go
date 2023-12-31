@@ -85,6 +85,7 @@ func NewApiServer(listAddr string) *ApiServer {
 }
 
 func (s *ApiServer) Run() {
+	// TODO: how to get params from path?
 	http.HandleFunc("/account", makeHTTPHandlerFunc(s.accountHandler))
 	http.HandleFunc("/transfer", makeHTTPHandlerFunc(s.transferHandler))
 
