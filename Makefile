@@ -4,5 +4,8 @@ build:
 run: build
 	@./bin/go-html-server
 
+liverun:
+	@ls *.go | entr -r make run
+
 test:
 	@go test -v ./...
