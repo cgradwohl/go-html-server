@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -33,13 +32,6 @@ type ApiError struct {
 
 // utils
 // -----
-func WriteJSON(w http.ResponseWriter, status int, value any) error {
-	w.WriteHeader(status)
-	w.Header().Set("Content-Type", "application/json")
-
-	return json.NewEncoder(w).Encode(value)
-}
-
 func WriteHTML(w http.ResponseWriter, status int, tmpl *template.Template, tmplName string, data any) error {
 	w.WriteHeader(status)
 	w.Header().Set("Content-Type", "text/html")
@@ -53,19 +45,6 @@ func extractID(path string) string {
 		return parts[2]
 	}
 	return ""
-}
-
-func makeJSONHandlerFunc(fn ApiFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		err := fn(w, r)
-		if err != nil {
-			// NOTE: Now we have central place to handle the error
-			http.Error(w, err.Error(), 500)
-
-			// TODO: this should be an HTML response not JSON
-			WriteJSON(w, http.StatusBadRequest, ApiError{Error: err.Error()})
-		}
-	}
 }
 
 func makeHTMLHandlerFunc(fn ApiFunc) http.HandlerFunc {
