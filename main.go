@@ -40,6 +40,13 @@ func WriteJSON(w http.ResponseWriter, status int, value any) error {
 	return json.NewEncoder(w).Encode(value)
 }
 
+func WriteHTML(w http.ResponseWriter, status int, tmpl *template.Template, tmplName string, data any) error {
+	w.WriteHeader(status)
+	w.Header().Set("Content-Type", "text/html")
+
+	return tmpl.ExecuteTemplate(w, tmplName, data)
+}
+
 func extractID(path string) string {
 	parts := strings.Split(path, "/")
 	if len(parts) > 2 {
@@ -48,7 +55,7 @@ func extractID(path string) string {
 	return ""
 }
 
-func makeHTTPHandlerFunc(fn ApiFunc) http.HandlerFunc {
+func makeJSONHandlerFunc(fn ApiFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := fn(w, r)
 		if err != nil {
@@ -61,14 +68,28 @@ func makeHTTPHandlerFunc(fn ApiFunc) http.HandlerFunc {
 	}
 }
 
+func makeHTMLHandlerFunc(fn ApiFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := fn(w, r)
+		if err != nil {
+			// Use WriteHTML to send an HTML response
+			err = WriteHTML(w, http.StatusInternalServerError, templates, "error.html", ApiError{Error: err.Error()})
+
+			if err != nil {
+				// If there's an error executing the error template, fall back to plain text
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}
+	}
+}
+
 func NewHTMLServer(listAddr string) *ApiServer {
 	return &ApiServer{listAddr: listAddr}
 }
 
 func (s *ApiServer) Start() {
-	// TODO: how to get params from path?
-	http.HandleFunc("/notes", makeHTTPHandlerFunc(s.notesHandler))
-	http.HandleFunc("/notes/", makeHTTPHandlerFunc(s.noteHandler))
+	http.HandleFunc("/notes", makeHTMLHandlerFunc(s.notesHandler))
+	http.HandleFunc("/notes/", makeHTMLHandlerFunc(s.noteHandler))
 
 	log.Println("listening on", s.listAddr)
 	log.Fatal(http.ListenAndServe(s.listAddr, nil)) // Include log.Fatal for proper error handling
@@ -98,23 +119,23 @@ func (s *ApiServer) listNotes(w http.ResponseWriter, r *http.Request) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// TODO: how to return HTML and status code?
-	return templates.ExecuteTemplate(w, "list.html", notes)
+	return WriteHTML(w, http.StatusOK, templates, "list.html", notes)
 }
 
 func (s *ApiServer) createNote(w http.ResponseWriter, r *http.Request) error {
 	r.ParseForm()
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	notes[id] = Note{
+	note := Note{
 		ID:      id,
 		Title:   r.FormValue("title"),
 		Content: r.FormValue("content"),
 		Created: time.Now(),
 	}
+
+	notes[id] = note
 	http.Redirect(w, r, "/", http.StatusFound)
 
-	// TODO: how to return HTML and status code?
-	return nil
+	return WriteHTML(w, http.StatusOK, templates, "view.html", notes)
 }
 
 // note handler
@@ -142,56 +163,60 @@ func (s *ApiServer) getNote(w http.ResponseWriter, r *http.Request) error {
 	mu.Unlock()
 
 	if !ok {
-		// TODO: how to return HTML and status code?
-		return nil
+		return WriteHTML(w, http.StatusNotFound, templates, "error.html", "Note not found")
 	}
 
-	templates.ExecuteTemplate(w, "view.html", note)
-
-	// TODO: how to return HTML and status code?
-	return nil
+	return WriteHTML(w, http.StatusOK, templates, "view.html", note)
 }
 
 func (s *ApiServer) updateNote(w http.ResponseWriter, r *http.Request) error {
 	id := extractID(r.URL.Path)
-	if r.Method == "POST" {
-		r.ParseForm()
-		mu.Lock()
-		notes[id] = Note{
-			ID:      id,
-			Title:   r.FormValue("title"),
-			Content: r.FormValue("content"),
-			Created: notes[id].Created,
-		}
-		mu.Unlock()
-		http.Redirect(w, r, "/", http.StatusFound)
 
-		// TODO: how to return HTML and status code?
-		return nil
-	}
+	// Lock the notes map for safe concurrent access
 	mu.Lock()
-	note, ok := notes[id]
-	mu.Unlock()
-	if !ok {
-		http.NotFound(w, r)
+	defer mu.Unlock()
 
-		// TODO: how to return HTML and status code?
-		return nil
+	// Check if the note exists
+	note, exists := notes[id]
+	if !exists {
+		return WriteHTML(w, http.StatusNotFound, templates, "error.html", ApiError{Error: "Note not found"})
 	}
-	templates.ExecuteTemplate(w, "edit.html", note)
 
-	// TODO: how to return HTML and status code?
+	// Parse the form data
+	if err := r.ParseForm(); err != nil {
+		return WriteHTML(w, http.StatusInternalServerError, templates, "error.html", ApiError{Error: "Error parsing form"})
+	}
+
+	// Update the note with new values
+	notes[id] = Note{
+		ID:      id,
+		Title:   r.FormValue("title"),
+		Content: r.FormValue("content"),
+		Created: note.Created,
+	}
+
+	// Redirect to the updated note's view
+	http.Redirect(w, r, "/notes/"+id, http.StatusFound)
+
 	return nil
 }
 
 func (s *ApiServer) deleteNote(w http.ResponseWriter, r *http.Request) error {
 	id := extractID(r.URL.Path)
+
 	mu.Lock()
+	// Check if the note exists before deleting
+	if _, exists := notes[id]; !exists {
+		mu.Unlock() // Unlock before returning
+		return WriteHTML(w, http.StatusNotFound, templates, "error.html", ApiError{Error: "Note not found"})
+	}
+
 	delete(notes, id)
 	mu.Unlock()
-	http.Redirect(w, r, "/", http.StatusFound)
 
-	// TODO: how to return HTML and status code?
+	// Redirect to the main notes listing page after deletion
+	http.Redirect(w, r, "/notes", http.StatusFound)
+
 	return nil
 }
 
