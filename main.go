@@ -98,7 +98,7 @@ func (s *ApiServer) Start() {
 // main
 // ----
 var (
-	templates = template.Must(template.ParseFiles("list.html", "edit.html", "view.html"))
+	templates = template.Must(template.ParseFiles("list.html", "edit.html", "error.html", "view.html"))
 	notes     = make(map[string]Note)
 	mu        = &sync.Mutex{}
 )
