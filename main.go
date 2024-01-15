@@ -8,6 +8,8 @@ import (
 	"sync"
 	"text/template"
 	"time"
+
+	"github.com/a-h/templ"
 )
 
 // types
@@ -29,6 +31,7 @@ type ApiServer struct {
 type ApiError struct {
 	Error string
 }
+type TemplComponentFunc func(name string) templ.Component
 
 // utils
 // -----
@@ -37,6 +40,13 @@ func WriteHTML(w http.ResponseWriter, status int, tmpl *template.Template, tmplN
 	w.Header().Set("Content-Type", "text/html")
 
 	return tmpl.ExecuteTemplate(w, tmplName, data)
+}
+
+func WriteHTML2(r *http.Request, w http.ResponseWriter, status int, component templ.Component) error {
+	w.WriteHeader(status)
+	w.Header().Set("Content-Type", "text/html")
+
+	return component.Render(r.Context(), w)
 }
 
 func extractID(path string) string {
@@ -52,10 +62,15 @@ func makeHTMLHandlerFunc(fn ApiFunc) http.HandlerFunc {
 		err := fn(w, r)
 		if err != nil {
 			// Use WriteHTML to send an HTML response
+			// this is the last fall back case if the handler fails and returned an error
+			// handlers should never do this and should always write their own success or error responses
+			// this is here as a last resort
+			// this way, when you want to throw a 500 error, you can just return an error from the handler
+			//  another idea is to have the handler return a status code with the error, but that is not as clean and I THINK that its better to just let the handler function return its own error and success responses
 			err = WriteHTML(w, http.StatusInternalServerError, templates, "error.html", ApiError{Error: err.Error()})
 
+			// if WriteHtml fails, fall back to plain text
 			if err != nil {
-				// If there's an error executing the error template, fall back to plain text
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
 		}
@@ -67,6 +82,7 @@ func NewHTMLServer(listAddr string) *ApiServer {
 }
 
 func (s *ApiServer) Start() {
+	http.HandleFunc("/", makeHTMLHandlerFunc(s.indexHandler)) // Use makeHTMLHandlerFunc to wrap the notesHandler functio
 	http.HandleFunc("/notes", makeHTMLHandlerFunc(s.notesHandler))
 	http.HandleFunc("/notes/", makeHTMLHandlerFunc(s.noteHandler))
 
@@ -77,10 +93,14 @@ func (s *ApiServer) Start() {
 // main
 // ----
 var (
-	templates = template.Must(template.ParseFiles("list.html", "edit.html", "error.html", "view.html"))
+	templates = template.Must(template.ParseFiles("index.html", "list.html", "edit.html", "error.html", "view.html"))
 	notes     = make(map[string]Note)
 	mu        = &sync.Mutex{}
 )
+
+func (s *ApiServer) indexHandler(w http.ResponseWriter, r *http.Request) error {
+	return WriteHTML(w, http.StatusOK, templates, "index.html", nil)
+}
 
 func (s *ApiServer) notesHandler(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
@@ -98,7 +118,7 @@ func (s *ApiServer) listNotes(w http.ResponseWriter, r *http.Request) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	return WriteHTML(w, http.StatusOK, templates, "list.html", notes)
+	return WriteHTML2(r, w, http.StatusOK, hello("world"))
 }
 
 func (s *ApiServer) createNote(w http.ResponseWriter, r *http.Request) error {
